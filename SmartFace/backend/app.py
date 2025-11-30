@@ -35,22 +35,21 @@ device = torch.device('cpu')
 class ResNet50Embedding(nn.Module):
     def __init__(self, embed_dim=512, p_drop=0.5):
         super(ResNet50Embedding, self).__init__()
-        resnet = models.resnet50(weights=None)  # atau pretrained=False
+        resnet = models.resnet50(weights=None)  # atau pretrained=False kalau mau
 
-        # Ambil fitur sebelum FC
-        in_features = resnet.fc.in_features
-        resnet.fc = nn.Identity()
+        in_features = resnet.fc.in_features  # 2048
+        resnet.fc = nn.Identity()            # buang fc bawaan
 
         self.backbone = resnet
+        self.bn = nn.BatchNorm1d(in_features)   # <== 2048, SAMA seperti di ckpt
         self.dropout = nn.Dropout(p_drop)
-        self.fc = nn.Linear(in_features, embed_dim)
-        self.bn = nn.BatchNorm1d(embed_dim) 
+        self.fc = nn.Linear(in_features, embed_dim)  # 2048 -> 512
 
     def forward(self, x):
-        x = self.backbone(x)
+        x = self.backbone(x)   # [B, 2048]
+        x = self.bn(x)         # BN di 2048 dim
         x = self.dropout(x)
-        x = self.fc(x)
-        x = self.bn(x) 
+        x = self.fc(x)         # jadi [B, 512]
         return x
 
 # Load ArcFace checkpoint
@@ -85,13 +84,9 @@ try:
 
     # --- Bangun model embedding dan load state_dict ---
     model = ResNet50Embedding(embed_dim=512, p_drop=0.5)
-    load_result = model.load_state_dict(ckpt["model"], strict=False)
-    # Optional: print info kalau mau lihat apa yang di-skip
-    missing_keys, unexpected_keys = load_result
-    if unexpected_keys:
-        print("  [WARN] Unexpected keys ignored in model state_dict:", unexpected_keys)
-    if missing_keys:
-        print("  [WARN] Missing keys in model state_dict:", missing_keys)
+
+    # coba strict=True dulu, harusnya sudah cocok
+    model.load_state_dict(ckpt["model"])  
 
     model.to(device).eval()
 
@@ -187,11 +182,12 @@ def predict_identity(face_image):
 
     # Predict: embedding -> cosine similarity with arc_weight
     with torch.no_grad():
+        SCALE = 15
         emb = model(img_tensor)                           # [1, 512]
-        emb_norm = F.normalize(emb, dim=1)                # [1, 512]
-        w_norm = F.normalize(arc_weight, dim=1)           # [C, 512]
-        logits = torch.matmul(emb_norm, w_norm.t())       # [1, C]
-        probabilities = torch.softmax(logits, dim=1)[0]   # [C]
+        emb_norm = F.normalize(emb, dim=1)
+        w_norm   = F.normalize(arc_weight, dim=1)
+        logits   = torch.matmul(emb_norm, w_norm.t()) * SCALE   # <--- KALIKAN DI SINI
+        probabilities = torch.softmax(logits, dim=1)[0]
 
     # Get top 3 predictions
     top3_prob, top3_idx = torch.topk(probabilities, 3)
