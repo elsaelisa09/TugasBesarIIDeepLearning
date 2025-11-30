@@ -81,8 +81,21 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================================
-# SIDEBAR - NAVIGATION
+# API CONFIGURATION
 # ============================================================================
+BACKEND_URL = "http://localhost:5000"  # Backend Flask endpoint
+
+# Check if backend is running
+def check_backend():
+    try:
+        response = requests.get(f"{BACKEND_URL}/health", timeout=2)
+        return response.status_code == 200
+    except:
+        return False
+
+# Initialize session state for backend status
+if 'backend_available' not in st.session_state:
+    st.session_state.backend_available = check_backend()
 st.sidebar.markdown("### 🎓 SmartFace Navigation")
 page = st.sidebar.radio("Pilih Halaman:", [
     "🏠 Home",
@@ -285,69 +298,119 @@ elif page == "📊 Dashboard":
 elif page == "🎯 Demo Aplikasi":
     st.markdown('<p class="section-title">🎯 Demo Aplikasi SmartFace</p>', unsafe_allow_html=True)
     
-    st.warning("⚠️ **Demo Mode**: Fitur ini menunjukkan contoh output dari aplikasi yang sesungguhnya.")
+    # Check backend status
+    if not st.session_state.backend_available:
+        st.error("""
+        ❌ **Backend Tidak Terkoneksi**
+        
+        Pastikan backend sudah berjalan di `http://localhost:5000`
+        
+        Jalankan di terminal:
+        ```
+        cd SmartFace/backend
+        python app.py
+        ```
+        """)
+        st.stop()
+    
+    st.success("✅ Backend Connected: http://localhost:5000")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("### 📸 Upload Foto")
+        st.markdown("### 📸 Upload Foto untuk Deteksi")
         uploaded_file = st.file_uploader("Pilih file gambar...", type=["jpg", "jpeg", "png"])
         
         if uploaded_file is not None:
             image = Image.open(uploaded_file)
             st.image(image, caption="Foto yang diupload", use_column_width=True)
             
-            if st.button("🔍 Deteksi Wajah & Cek Kehadiran"):
-                st.info("Processing image... (Demo mode)")
-                
-                # Simulate processing
-                import time
-                progress_bar = st.progress(0)
-                for i in range(100):
-                    time.sleep(0.01)
-                    progress_bar.progress(i + 1)
-                
-                st.success("✅ Deteksi Berhasil!")
+            if st.button("🔍 Deteksi Wajah & Cek Kehadiran", use_container_width=True):
+                with st.spinner("⏳ Memproses gambar... Sedang deteksi wajah..."):
+                    try:
+                        # Convert image to base64
+                        image_bytes = io.BytesIO()
+                        image.save(image_bytes, format='JPEG')
+                        image_b64 = image_bytes.getvalue()
+                        image_b64_str = __import__('base64').b64encode(image_b64).decode()
+                        
+                        # Send to backend
+                        response = requests.post(
+                            f"{BACKEND_URL}/recognize",
+                            json={"image": f"data:image/jpeg;base64,{image_b64_str}"},
+                            timeout=10
+                        )
+                        
+                        if response.status_code == 200:
+                            result = response.json()
+                            st.session_state.demo_result = result
+                            st.success("✅ Deteksi Berhasil!")
+                        else:
+                            error_msg = response.json().get('error', 'Unknown error')
+                            st.error(f"❌ Error: {error_msg}")
+                    except Exception as e:
+                        st.error(f"❌ Error saat menghubungi backend: {str(e)}")
     
     with col2:
-        st.markdown("### 📊 Hasil Deteksi (Contoh)")
+        st.markdown("### 📊 Hasil Deteksi")
         
-        # Demo hasil
-        demo_result = {
-            "Status": "HADIR ✅",
-            "Nama": "Elsa Elisa Yohana Sianturi",
-            "NIM": "122140135",
-            "Kelas": "RA",
-            "Confidence": "98.45%",
-            "Waktu": datetime.now().strftime("%H:%M:%S")
-        }
-        
-        st.markdown("""
-        <div class="metric-box" style="background: linear-gradient(135deg, #22C55E 0%, #16a34a 100%); border: 2px solid #16a34a;">
-            <h2 style="color: white;">HADIR ✅</h2>
-            <p style="color: white; font-size: 1.3rem;">Elsa Elisa Yohana Sianturi</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        col_info1, col_info2 = st.columns(2)
-        with col_info1:
-            st.write(f"**NIM**: 122140135")
-            st.write(f"**Kelas**: RA")
-        with col_info2:
-            st.write(f"**Confidence**: 98.45%")
-            st.write(f"**Waktu**: {datetime.now().strftime('%H:%M:%S')}")
-        
-        st.markdown("### 🎯 Top 3 Prediksi")
-        predictions_df = pd.DataFrame({
-            "Ranking": [1, 2, 3],
-            "Nama": [
-                "Elsa Elisa Yohana Sianturi",
-                "Sikah Nubuahtul Ilmi",
-                "Machzaul Harmansyah"
-            ],
-            "Confidence": ["98.45%", "0.89%", "0.65%"]
-        })
-        st.dataframe(predictions_df, use_container_width=True, hide_index=True)
+        if 'demo_result' in st.session_state:
+            result = st.session_state.demo_result
+            predictions = result.get('predictions', [])
+            
+            if predictions:
+                top_pred = predictions[0]
+                student_name = top_pred['label']
+                confidence = top_pred['confidence']
+                
+                st.markdown(f"""
+                <div class="metric-box" style="background: linear-gradient(135deg, #22C55E 0%, #16a34a 100%); border: 2px solid #16a34a;">
+                    <h2 style="color: white;">HADIR ✅</h2>
+                    <p style="color: white; font-size: 1.1rem;">{student_name}</p>
+                    <p style="color: white; font-size: 0.95rem;">Confidence: {confidence}%</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.markdown("#### 📸 Cropped Face Image")
+                if 'face_image' in result:
+                    st.image(result['face_image'], use_column_width=True)
+                
+                st.markdown("#### 🎯 Top 3 Prediksi")
+                pred_data = []
+                for i, pred in enumerate(predictions[:3], 1):
+                    pred_data.append({
+                        "Ranking": i,
+                        "Nama": pred['label'],
+                        "Confidence": f"{pred['confidence']}%"
+                    })
+                
+                predictions_df = pd.DataFrame(pred_data)
+                st.dataframe(predictions_df, use_container_width=True, hide_index=True)
+                
+                # Mark attendance button
+                if st.button("💾 Catat Kehadiran", use_container_width=True):
+                    with st.spinner("📝 Menyimpan data kehadiran..."):
+                        try:
+                            attendance_response = requests.post(
+                                f"{BACKEND_URL}/mark-attendance",
+                                json={
+                                    "label": student_name,
+                                    "confidence": confidence,
+                                    "image": result.get('face_image', '')
+                                },
+                                timeout=5
+                            )
+                            
+                            if attendance_response.status_code == 200:
+                                att_result = attendance_response.json()
+                                st.success(f"✅ {att_result.get('message', 'Kehadiran berhasil dicatat')}")
+                            else:
+                                err_msg = attendance_response.json().get('message', 'Unknown error')
+                                st.warning(f"⚠️ {err_msg}")
+                        except Exception as e:
+                            st.error(f"❌ Error: {str(e)}")
+        else:
+            st.info("📌 Upload dan deteksi foto di sebelah kiri untuk melihat hasil")
 
 # ============================================================================
 # PAGE: DOKUMENTASI
@@ -461,58 +524,82 @@ elif page == "📚 Dokumentasi":
         """)
     
     with tab4:
+        st.markdown("### 💻 Backend API Endpoints")
+        
+        # Try to get backend info
+        try:
+            health_response = requests.get(f"{BACKEND_URL}/health", timeout=2)
+            if health_response.status_code == 200:
+                health_data = health_response.json()
+                
+                st.success("✅ **Backend Status: CONNECTED**")
+                
+                col_status1, col_status2 = st.columns(2)
+                with col_status1:
+                    st.write(f"**Model Loaded**: {health_data.get('model_loaded', False)}")
+                    st.write(f"**Face Detector**: {health_data.get('face_detector', 'N/A')}")
+                with col_status2:
+                    st.write(f"**MTCNN Ready**: {health_data.get('mtcnn_loaded', False)}")
+                    st.write(f"**Classes**: {health_data.get('num_classes', 0)}")
+        except:
+            st.warning("⚠️ **Backend Status: DISCONNECTED** - Backend tidak merespons")
+        
+        st.markdown("---")
+        
         st.markdown("""
-        ### 💻 API Endpoints
+        ### 📋 Endpoint Reference
         
-        **1. Face Detection & Recognition**
+        **1. Health Check**
         ```
-        POST /predict
-        Content-Type: application/json
-        
-        Body:
-        {
-            "image": "base64_encoded_image"
-        }
-        
-        Response:
-        {
-            "label": "Student Name",
-            "confidence": 98.5,
-            "success": true
-        }
+        GET /health
+        Response: {model_loaded, face_detector, mtcnn_loaded, num_classes}
         ```
         
-        **2. Mark Attendance**
+        **2. Face Recognition**
+        ```
+        POST /recognize
+        Body: {"image": "data:image/jpeg;base64,..."}
+        Response: {
+            "success": true,
+            "predictions": [
+                {"label": "Nama Siswa", "confidence": 98.5}
+            ],
+            "bbox": {"x1": ..., "y1": ..., "x2": ..., "y2": ...},
+            "face_image": "base64...",
+            "annotated_image": "base64..."
+        }
+        ```
+        
+        **3. Mark Attendance**
         ```
         POST /mark-attendance
-        Content-Type: application/json
-        
-        Body:
-        {
+        Body: {
             "label": "Student Name",
             "confidence": 98.5,
-            "image": null
+            "image": "base64..."
         }
-        
-        Response:
-        {
+        Response: {
             "success": true,
-            "message": "Attendance marked"
+            "message": "Absensi berhasil dicatat",
+            "record": {...}
         }
         ```
         
-        **3. Get Attendance Records**
+        **4. Get Attendance Records**
         ```
         GET /attendance
+        Optional: ?date=2024-11-30
+        Response: {
+            "success": true,
+            "data": [...],
+            "total": 15
+        }
+        ```
         
-        Response:
-        [
-            {
-                "name": "Student Name",
-                "timestamp": "2024-11-30 16:30:00",
-                "confidence": 98.5
-            }
-        ]
+        **5. Delete Attendance Record**
+        ```
+        DELETE /attendance/<id>
+        Response: {"success": true, "message": "Record deleted"}
         ```
         """)
 
