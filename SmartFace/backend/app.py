@@ -1,4 +1,9 @@
-from flask import Flask, request, jsonify
+"""
+SmartFace - Sistem Absensi Berbasis Face Recognition
+Backend Flask Application dengan Integrated Frontend & API
+"""
+
+from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_cors import CORS
 import torch
 import torch.nn as nn
@@ -8,12 +13,14 @@ import numpy as np
 import cv2
 import base64
 import io
-import pickle
 import os
 from datetime import datetime
 import json
 
-app = Flask(__name__)
+# ============================================================================
+# FLASK APP SETUP
+# ============================================================================
+app = Flask(__name__, template_folder='../templates', static_folder='../static')
 CORS(app)
 
 # Load Face Detection (MTCNN from facenet-pytorch)
@@ -102,6 +109,32 @@ def save_attendance(attendance_list):
     with open(ATTENDANCE_FILE, 'w') as f:
         json.dump(attendance_list, f, indent=2)
 
+def parse_student_data():
+    """Parse CSV to get student NIM and Kelas"""
+    student_data = {}
+    csv_path = '../labels-nim.csv'
+    
+    if os.path.exists(csv_path):
+        try:
+            with open(csv_path, 'r') as f:
+                for line in f:
+                    parts = line.strip().split(',')
+                    if len(parts) >= 3:
+                        name = parts[0].strip()
+                        nim = parts[1].strip()
+                        kelas = parts[2].strip()
+                        student_data[name] = {'nim': nim, 'kelas': kelas}
+        except:
+            pass
+    
+    return student_data
+
+STUDENT_DATA = parse_student_data()
+
+def save_attendance(attendance_list):
+    with open(ATTENDANCE_FILE, 'w') as f:
+        json.dump(attendance_list, f, indent=2)
+
 def detect_and_crop_face(image_array):
     """Detect face using MTCNN (Facenet-PyTorch) and return cropped face"""
     if mtcnn is None:
@@ -173,7 +206,28 @@ def predict_identity(face_image):
     
     return predictions
 
-@app.route('/health', methods=['GET'])
+# ============================================================================
+# ROUTES - FRONTEND PAGES
+# ============================================================================
+@app.route('/')
+def index():
+    """Main page"""
+    return render_template('index.html')
+
+@app.route('/dashboard')
+def dashboard():
+    """Dashboard page with metrics"""
+    return render_template('dashboard.html')
+
+@app.route('/attendance-list')
+def attendance_list_page():
+    """Attendance records page"""
+    return render_template('attendance.html')
+
+# ============================================================================
+# ROUTES - API ENDPOINTS
+# ============================================================================
+@app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({
         'status': 'ok',
@@ -213,66 +267,17 @@ def recognize():
         if not predictions:
             return jsonify({'error': 'Model not available'}), 500
         
-        # Encode cropped face to base64
+        # Get student info
+        top_student = predictions[0]['label']
+        student_info = STUDENT_DATA.get(top_student, {'nim': 'N/A', 'kelas': 'N/A'})
+        
         _, buffer = cv2.imencode('.jpg', face_crop)
         face_base64 = base64.b64encode(buffer).decode('utf-8')
         
-        # Draw bbox on original image
+        # Draw bbox
         if bbox:
-            # Convert to PIL Image for custom font
-            from PIL import ImageDraw, ImageFont
-            
-            # Draw rectangle with cv2
             cv2.rectangle(image, (bbox['x1'], bbox['y1']), (bbox['x2'], bbox['y2']), (0, 255, 0), 4)
-            
-            # Convert to PIL for text with custom font
-            image_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-            draw = ImageDraw.Draw(image_pil)
-            
-            # Try to load Poppins font, fallback to default if not available
-            label_text = predictions[0]['label']
-            font_size = 40
-            try:
-                # Try to load Poppins Bold
-                font = ImageFont.truetype("C:/Windows/Fonts/Poppins-Bold.ttf", font_size)
-            except:
-                try:
-                    # Try alternative font paths or fallback
-                    font = ImageFont.truetype("arial.ttf", font_size)
-                except:
-                    # Use default font
-                    font = ImageFont.load_default()
-            
-            # Calculate text size and center position
-            bbox_text = draw.textbbox((0, 0), label_text, font=font)
-            text_width = bbox_text[2] - bbox_text[0]
-            text_height = bbox_text[3] - bbox_text[1]
-            
-            text_x = bbox['x1'] + (bbox['x2'] - bbox['x1'] - text_width) // 2
-            text_y = bbox['y1'] - text_height - 30
-            
-            # Pastikan text tidak keluar dari frame
-            if text_x < 5:
-                text_x = 5
-            if text_y < 5:
-                text_y = bbox['y2'] + 10
-            
-            # Draw text with outline for better visibility
-            outline_color = (0, 0, 0)
-            text_color = (0, 255, 0)
-            
-            # Draw outline
-            for adj_x in [-2, -1, 0, 1, 2]:
-                for adj_y in [-2, -1, 0, 1, 2]:
-                    draw.text((text_x + adj_x, text_y + adj_y), label_text, font=font, fill=outline_color)
-            
-            # Draw main text
-            draw.text((text_x, text_y), label_text, font=font, fill=text_color)
-            
-            # Convert back to cv2 format
-            image = cv2.cvtColor(np.array(image_pil), cv2.COLOR_RGB2BGR)
         
-        # Encode annotated image to base64
         _, buffer = cv2.imencode('.jpg', image)
         annotated_base64 = base64.b64encode(buffer).decode('utf-8')
         
@@ -281,7 +286,8 @@ def recognize():
             'bbox': bbox,
             'face_image': f'data:image/jpeg;base64,{face_base64}',
             'annotated_image': f'data:image/jpeg;base64,{annotated_base64}',
-            'predictions': predictions
+            'predictions': predictions,
+            'student_info': student_info
         })
         
     except Exception as e:
@@ -299,16 +305,20 @@ def mark_attendance():
         if not label or confidence is None:
             return jsonify({'error': 'Missing required fields'}), 400
         
+        # Get student info
+        student_info = STUDENT_DATA.get(label, {'nim': 'N/A', 'kelas': 'N/A'})
+        
         # Create attendance record
         attendance_record = {
             'id': len(load_attendance()) + 1,
             'label': label,
+            'nim': student_info.get('nim', 'N/A'),
+            'kelas': student_info.get('kelas', 'N/A'),
             'confidence': confidence,
             'timestamp': datetime.now().isoformat(),
             'date': datetime.now().strftime('%Y-%m-%d'),
             'time': datetime.now().strftime('%H:%M:%S'),
-            'status': 'present',
-            'image': image
+            'status': 'present'
         }
         
         # Load existing attendance
@@ -377,34 +387,51 @@ def delete_attendance(id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/stats', methods=['GET'])
+def get_stats():
+    """Get attendance statistics"""
+    try:
+        attendance_list = load_attendance()
+        today = datetime.now().strftime('%Y-%m-%d')
+        
+        today_attendance = [r for r in attendance_list if r['date'] == today]
+        unique_students = len(set(r['label'] for r in today_attendance))
+        
+        return jsonify({
+            'success': True,
+            'total_records': len(attendance_list),
+            'today_attendance': len(today_attendance),
+            'unique_students_today': unique_students,
+            'model_accuracy': 98.5
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 def print_banner():
     """Print startup banner"""
     banner = """
 ╔════════════════════════════════════════════════════════════════════════════╗
 ║                                                                            ║
-║        🎯 SMARTFACE - FACE RECOGNITION ATTENDANCE SYSTEM v2.0              ║
-║                   Intelligent Student Attendance Management                ║
+║        🎯 SMARTFACE - FACE RECOGNITION ATTENDANCE SYSTEM v3.0              ║
+║              Integrated Backend + Frontend Single Application               ║
 ║                                                                            ║
 ╚════════════════════════════════════════════════════════════════════════════╝
 
 📊 SYSTEM INFORMATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
     print(banner)
     
-    # Model Status
     model_status = "✅ READY" if model else "❌ FAILED"
     print(f"  Model Status       : {model_status}")
     print(f"  Model Type         : ResNet50 (Fine-tuned)")
     print(f"  Classes Recognized : {num_classes} students")
     print(f"  Model Accuracy     : 98.5%")
     
-    # Face Detection Status
     detector_status = "✅ ACTIVE (MTCNN)" if mtcnn else "⚠️  FALLBACK (Center Crop)"
     print(f"\n  Face Detection     : {detector_status}")
     print(f"  Device             : CPU")
     
-    # API Status
     print(f"\n  API Framework      : Flask 3.1.0")
     print(f"  CORS Enabled       : ✅ Yes")
     print(f"  Attendance DB      : JSON-based (Local)")
@@ -412,11 +439,19 @@ def print_banner():
     print(f"\n" + "━"*80)
     print(f"\n🌐 API ENDPOINTS")
     print(f"━"*80)
-    print(f"  GET    /health              → Check system status")
-    print(f"  POST   /recognize           → Detect & recognize face")
-    print(f"  POST   /mark-attendance     → Record attendance")
-    print(f"  GET    /attendance          → Retrieve attendance records")
-    print(f"  DELETE /attendance/<id>     → Delete attendance record")
+    print(f"  GET    /api/health              → Check system status")
+    print(f"  POST   /recognize               → Detect & recognize face")
+    print(f"  POST   /mark-attendance         → Record attendance")
+    print(f"  GET    /attendance              → Retrieve attendance records")
+    print(f"  DELETE /attendance/<id>         → Delete attendance record")
+    print(f"  GET    /api/stats               → Get statistics")
+    
+    print(f"\n" + "━"*80)
+    print(f"\n📱 FRONTEND PAGES")
+    print(f"━"*80)
+    print(f"  GET    /                        → Main Dashboard")
+    print(f"  GET    /dashboard               → Statistics & Metrics")
+    print(f"  GET    /attendance-list         → View Records")
     
     print(f"\n" + "━"*80)
     print(f"\n🔧 CONFIGURATION")
@@ -434,15 +469,19 @@ def print_banner():
     print(f"  ✨ Support for 70 student identities")
     print(f"  ✨ Automatic attendance recording with timestamp")
     print(f"  ✨ Duplicate detection (1 student = 1 attendance/day)")
-    print(f"  ✨ Base64 image transfer for client-server communication")
-    print(f"  ✨ Top-3 predictions with confidence scores")
-    print(f"  ✨ Attendance filtering by date")
-    print(f"  ✨ RESTful API for easy integration")
+    print(f"  ✨ RESTful API for integration")
+    print(f"  ✨ Integrated web-based frontend")
+    print(f"  ✨ Real-time dashboard with statistics")
+    print(f"  ✨ Attendance records management")
     
     print(f"\n" + "="*80)
     print(f"\n⏳ System initialization: COMPLETE")
-    print(f"🚀 Ready to process attendance recognition requests!")
-    print(f"\n💡 Tip: Visit http://127.0.0.1:5000/health for API status")
+    print(f"🚀 Server ready to accept requests!")
+    
+    print(f"\n💡 Access the application at:")
+    print(f"   Frontend: http://127.0.0.1:5000/")
+    print(f"   API Docs: http://127.0.0.1:5000/api/health")
+    
     print(f"\n" + "="*80 + "\n")
 
 if __name__ == '__main__':
