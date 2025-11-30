@@ -1,9 +1,4 @@
-"""
-SmartFace - Sistem Absensi Berbasis Face Recognition
-Backend Flask Application dengan Integrated Frontend & API
-"""
-
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import torch
 import torch.nn as nn
@@ -12,13 +7,12 @@ from PIL import Image
 import numpy as np
 import cv2
 import base64
-import io
 import os
 from datetime import datetime
 import json
 
 # ============================================================================
-# FLASK APP SETUP
+# FLASK SETUP
 # ============================================================================
 app = Flask(__name__, template_folder='../templates', static_folder='../static')
 CORS(app)
@@ -109,32 +103,6 @@ def save_attendance(attendance_list):
     with open(ATTENDANCE_FILE, 'w') as f:
         json.dump(attendance_list, f, indent=2)
 
-def parse_student_data():
-    """Parse CSV to get student NIM and Kelas"""
-    student_data = {}
-    csv_path = '../labels-nim.csv'
-    
-    if os.path.exists(csv_path):
-        try:
-            with open(csv_path, 'r') as f:
-                for line in f:
-                    parts = line.strip().split(',')
-                    if len(parts) >= 3:
-                        name = parts[0].strip()
-                        nim = parts[1].strip()
-                        kelas = parts[2].strip()
-                        student_data[name] = {'nim': nim, 'kelas': kelas}
-        except:
-            pass
-    
-    return student_data
-
-STUDENT_DATA = parse_student_data()
-
-def save_attendance(attendance_list):
-    with open(ATTENDANCE_FILE, 'w') as f:
-        json.dump(attendance_list, f, indent=2)
-
 def detect_and_crop_face(image_array):
     """Detect face using MTCNN (Facenet-PyTorch) and return cropped face"""
     if mtcnn is None:
@@ -206,28 +174,37 @@ def predict_identity(face_image):
     
     return predictions
 
+def parse_student_data():
+    """Parse CSV to get student NIM and Kelas"""
+    student_data = {}
+    csv_path = '../labels-nim.csv'
+    
+    if os.path.exists(csv_path):
+        try:
+            with open(csv_path, 'r') as f:
+                for line in f:
+                    parts = line.strip().split(',')
+                    if len(parts) >= 3:
+                        name = parts[0].strip()
+                        nim = parts[1].strip()
+                        kelas = parts[2].strip()
+                        student_data[name] = {'nim': nim, 'kelas': kelas}
+        except:
+            pass
+    
+    return student_data
+
+STUDENT_DATA = parse_student_data()
+
 # ============================================================================
-# ROUTES - FRONTEND PAGES
+# ROUTES
 # ============================================================================
 @app.route('/')
 def index():
     """Main page"""
     return render_template('index.html')
 
-@app.route('/dashboard')
-def dashboard():
-    """Dashboard page with metrics"""
-    return render_template('dashboard.html')
-
-@app.route('/attendance-list')
-def attendance_list_page():
-    """Attendance records page"""
-    return render_template('attendance.html')
-
-# ============================================================================
-# ROUTES - API ENDPOINTS
-# ============================================================================
-@app.route('/api/health', methods=['GET'])
+@app.route('/health', methods=['GET'])
 def health():
     return jsonify({
         'status': 'ok',
@@ -267,19 +244,72 @@ def recognize():
         if not predictions:
             return jsonify({'error': 'Model not available'}), 500
         
-        # Get student info
-        top_student = predictions[0]['label']
-        student_info = STUDENT_DATA.get(top_student, {'nim': 'N/A', 'kelas': 'N/A'})
-        
+        # Encode cropped face to base64
         _, buffer = cv2.imencode('.jpg', face_crop)
         face_base64 = base64.b64encode(buffer).decode('utf-8')
         
-        # Draw bbox
+        # Draw bbox on original image
         if bbox:
+            # Convert to PIL Image for custom font
+            from PIL import ImageDraw, ImageFont
+            
+            # Draw rectangle with cv2
             cv2.rectangle(image, (bbox['x1'], bbox['y1']), (bbox['x2'], bbox['y2']), (0, 255, 0), 4)
+            
+            # Convert to PIL for text with custom font
+            image_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+            draw = ImageDraw.Draw(image_pil)
+            
+            # Try to load Poppins font, fallback to default if not available
+            label_text = predictions[0]['label']
+            font_size = 40
+            try:
+                # Try to load Poppins Bold
+                font = ImageFont.truetype("C:/Windows/Fonts/Poppins-Bold.ttf", font_size)
+            except:
+                try:
+                    # Try alternative font paths or fallback
+                    font = ImageFont.truetype("arial.ttf", font_size)
+                except:
+                    # Use default font
+                    font = ImageFont.load_default()
+            
+            # Calculate text size and center position
+            bbox_text = draw.textbbox((0, 0), label_text, font=font)
+            text_width = bbox_text[2] - bbox_text[0]
+            text_height = bbox_text[3] - bbox_text[1]
+            
+            text_x = bbox['x1'] + (bbox['x2'] - bbox['x1'] - text_width) // 2
+            text_y = bbox['y1'] - text_height - 30
+            
+            # Pastikan text tidak keluar dari frame
+            if text_x < 5:
+                text_x = 5
+            if text_y < 5:
+                text_y = bbox['y2'] + 10
+            
+            # Draw text with outline for better visibility
+            outline_color = (0, 0, 0)
+            text_color = (0, 255, 0)
+            
+            # Draw outline
+            for adj_x in [-2, -1, 0, 1, 2]:
+                for adj_y in [-2, -1, 0, 1, 2]:
+                    draw.text((text_x + adj_x, text_y + adj_y), label_text, font=font, fill=outline_color)
+            
+            # Draw main text
+            draw.text((text_x, text_y), label_text, font=font, fill=text_color)
+            
+            # Convert back to cv2 format
+            image = cv2.cvtColor(np.array(image_pil), cv2.COLOR_RGB2BGR)
         
+        # Encode annotated image to base64
         _, buffer = cv2.imencode('.jpg', image)
         annotated_base64 = base64.b64encode(buffer).decode('utf-8')
+        
+        # Get student info
+        top_student = predictions[0]['label']
+        student_info = STUDENT_DATA.get(top_student, {'nim': 'N/A', 'kelas': 'N/A'})
         
         return jsonify({
             'success': True,
@@ -300,7 +330,6 @@ def mark_attendance():
         
         label = data.get('label')
         confidence = data.get('confidence')
-        image = data.get('image')
         
         if not label or confidence is None:
             return jsonify({'error': 'Missing required fields'}), 400
@@ -387,112 +416,52 @@ def delete_attendance(id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/stats', methods=['GET'])
-def get_stats():
-    """Get attendance statistics"""
-    try:
-        attendance_list = load_attendance()
-        today = datetime.now().strftime('%Y-%m-%d')
-        
-        today_attendance = [r for r in attendance_list if r['date'] == today]
-        unique_students = len(set(r['label'] for r in today_attendance))
-        
-        return jsonify({
-            'success': True,
-            'total_records': len(attendance_list),
-            'today_attendance': len(today_attendance),
-            'unique_students_today': unique_students,
-            'model_accuracy': 98.5
-        })
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-def print_banner():
-    """Print startup banner"""
+if __name__ == '__main__':
     banner = """
 ╔════════════════════════════════════════════════════════════════════════════╗
 ║                                                                            ║
-║        🎯 SMARTFACE - FACE RECOGNITION ATTENDANCE SYSTEM v3.0              ║
-║              Integrated Backend + Frontend Single Application               ║
+║              🎯 Deep Learning RA - Face Recognition System                 ║
+║                     Sistem Absensi Berbasis AI                             ║
 ║                                                                            ║
 ╚════════════════════════════════════════════════════════════════════════════╝
 
-📊 SYSTEM INFORMATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+📊 SYSTEM STATUS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
     print(banner)
     
-    model_status = "✅ READY" if model else "❌ FAILED"
-    print(f"  Model Status       : {model_status}")
-    print(f"  Model Type         : ResNet50 (Fine-tuned)")
-    print(f"  Classes Recognized : {num_classes} students")
-    print(f"  Model Accuracy     : 98.5%")
+    model_status = "✅ READY" if model else "❌ NOT LOADED"
+    print(f"  Model            : {model_status}")
+    print(f"  Classes          : {num_classes} Mahasiswa")
+    print(f"  Accuracy         : 98.5%")
     
-    detector_status = "✅ ACTIVE (MTCNN)" if mtcnn else "⚠️  FALLBACK (Center Crop)"
-    print(f"\n  Face Detection     : {detector_status}")
-    print(f"  Device             : CPU")
-    
-    print(f"\n  API Framework      : Flask 3.1.0")
-    print(f"  CORS Enabled       : ✅ Yes")
-    print(f"  Attendance DB      : JSON-based (Local)")
+    detector_status = "✅ ACTIVE" if mtcnn else "⚠️  FALLBACK"
+    print(f"\n  Face Detection   : {detector_status} (MTCNN)")
+    print(f"  Device           : CPU")
     
     print(f"\n" + "━"*80)
-    print(f"\n🌐 API ENDPOINTS")
+    print(f"\n🌐 SERVER ENDPOINTS")
     print(f"━"*80)
-    print(f"  GET    /api/health              → Check system status")
-    print(f"  POST   /recognize               → Detect & recognize face")
-    print(f"  POST   /mark-attendance         → Record attendance")
-    print(f"  GET    /attendance              → Retrieve attendance records")
-    print(f"  DELETE /attendance/<id>         → Delete attendance record")
-    print(f"  GET    /api/stats               → Get statistics")
+    print(f"  Frontend : http://127.0.0.1:5000/")
+    print(f"  API      : http://127.0.0.1:5000/health")
     
     print(f"\n" + "━"*80)
-    print(f"\n📱 FRONTEND PAGES")
+    print(f"\n🔧 API ROUTES")
     print(f"━"*80)
-    print(f"  GET    /                        → Main Dashboard")
-    print(f"  GET    /dashboard               → Statistics & Metrics")
-    print(f"  GET    /attendance-list         → View Records")
-    
-    print(f"\n" + "━"*80)
-    print(f"\n🔧 CONFIGURATION")
-    print(f"━"*80)
-    print(f"  Server Address    : 0.0.0.0")
-    print(f"  Server Port       : 5000")
-    print(f"  Environment       : Development (Debug Mode)")
-    print(f"  Model Path        : best_finetuned_resnet50.pth")
-    print(f"  Attendance File   : attendance.json")
-    
-    print(f"\n" + "━"*80)
-    print(f"\n📝 FEATURES")
-    print(f"━"*80)
-    print(f"  ✨ Real-time face detection and recognition")
-    print(f"  ✨ Support for 70 student identities")
-    print(f"  ✨ Automatic attendance recording with timestamp")
-    print(f"  ✨ Duplicate detection (1 student = 1 attendance/day)")
-    print(f"  ✨ RESTful API for integration")
-    print(f"  ✨ Integrated web-based frontend")
-    print(f"  ✨ Real-time dashboard with statistics")
-    print(f"  ✨ Attendance records management")
+    print(f"  GET    /                 → Main Page")
+    print(f"  GET    /health           → System Status")
+    print(f"  POST   /recognize        → Face Recognition")
+    print(f"  POST   /mark-attendance  → Record Attendance")
+    print(f"  GET    /attendance       → Get Records")
+    print(f"  DELETE /attendance/<id>  → Delete Record")
     
     print(f"\n" + "="*80)
-    print(f"\n⏳ System initialization: COMPLETE")
-    print(f"🚀 Server ready to accept requests!")
-    
-    print(f"\n💡 Access the application at:")
-    print(f"   Frontend: http://127.0.0.1:5000/")
-    print(f"   API Docs: http://127.0.0.1:5000/api/health")
-    
+    print(f"\n✨ System Ready!")
+    print(f"🚀 Access at: http://localhost:5000/")
     print(f"\n" + "="*80 + "\n")
-
-if __name__ == '__main__':
-    print_banner()
     
-    # Validate model before starting
     if model is None:
         print("⚠️  WARNING: Model not loaded!")
-        print("   Please check if 'best_finetuned_resnet50.pth' exists in backend folder")
+        print("   Place 'best_finetuned_resnet50.pth' in backend folder\n")
     
-    try:
-        app.run(debug=True, host='0.0.0.0', port=5000)
-    except Exception as e:
-        print(f"❌ Error starting server: {e}")
+    app.run(debug=True, host='0.0.0.0', port=5000)

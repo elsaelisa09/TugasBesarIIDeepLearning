@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SmartFace - Face Recognition Attendance System</title>
+    <title>Deep Learning RA - Sistem Absensi Face Recognition</title>
     <style>
         * {
             margin: 0;
@@ -13,7 +13,7 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #0F72E8 0%, #22C55E 100%);
+            background: #f5f5f5;
             min-height: 100vh;
             padding: 20px;
         }
@@ -23,75 +23,76 @@
             margin: 0 auto;
         }
 
+        /* Header */
         header {
-            background: white;
-            border-radius: 15px;
-            padding: 30px;
-            margin-bottom: 30px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-        }
-
-        h1 {
-            color: #0F72E8;
-            font-size: 2.5em;
-            margin-bottom: 10px;
-        }
-
-        .subtitle {
-            color: #666;
-            font-size: 1.1em;
-        }
-
-        nav {
-            margin-top: 20px;
             display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
             gap: 15px;
         }
 
-        nav a {
-            padding: 12px 24px;
-            background: #0F72E8;
-            color: white;
-            text-decoration: none;
-            border-radius: 8px;
-            transition: all 0.3s;
+        .logo {
+            font-size: 2em;
         }
 
-        nav a:hover {
-            background: #22C55E;
-            transform: translateY(-2px);
+        .header-title {
+            display: flex;
+            flex-direction: column;
         }
 
+        .header-title h1 {
+            font-size: 1.5em;
+            color: #333;
+            margin: 0;
+        }
+
+        .header-title p {
+            font-size: 0.9em;
+            color: #666;
+            margin: 0;
+        }
+
+        .header-date {
+            color: #999;
+            font-size: 0.9em;
+        }
+
+        /* Main Content */
         .main-content {
             display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 20px;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
             margin-bottom: 20px;
         }
 
-        .card {
+        /* Left Section - Camera/Upload */
+        .camera-section {
             background: white;
-            border-radius: 15px;
+            border-radius: 12px;
             padding: 30px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
 
         .camera-section h2 {
-            color: #0F72E8;
+            color: #333;
             margin-bottom: 20px;
-            font-size: 1.5em;
-        }
-
-        #camera {
-            width: 100%;
-            border-radius: 10px;
-            background: #000;
-            margin-bottom: 15px;
+            font-size: 1.2em;
         }
 
         .button-group {
             display: flex;
-            gap: 10px;
+            gap: 15px;
+            margin-bottom: 25px;
         }
 
         button {
@@ -99,239 +100,436 @@
             padding: 12px 20px;
             border: none;
             border-radius: 8px;
-            font-size: 1em;
-            font-weight: bold;
+            font-size: 0.95em;
+            font-weight: 600;
             cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-upload {
+            background: #2563eb;
+            color: white;
+        }
+
+        .btn-upload:hover {
+            background: #1d4ed8;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        }
+
+        .btn-camera {
+            background: white;
+            color: #2563eb;
+            border: 2px solid #2563eb;
+        }
+
+        .btn-camera:hover {
+            background: #f0f9ff;
+        }
+
+        #camera {
+            width: 100%;
+            aspect-ratio: 4/3;
+            background: #000;
+            border-radius: 8px;
+            margin: 20px 0;
+            display: none;
+        }
+
+        #preview {
+            width: 100%;
+            aspect-ratio: 4/3;
+            background: #f0f0f0;
+            border-radius: 8px;
+            margin: 20px 0;
+            object-fit: contain;
+        }
+
+        .status-text {
+            text-align: center;
+            color: #999;
+            padding: 40px 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .detect-button {
+            width: 100%;
+            background: #10b981;
+            color: white;
+            padding: 14px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95em;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 15px;
             transition: all 0.3s;
         }
 
-        .btn-primary {
-            background: #0F72E8;
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: #0959B8;
+        .detect-button:hover {
+            background: #059669;
             transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
         }
 
-        .btn-success {
-            background: #22C55E;
-            color: white;
+        .detect-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
         }
 
-        .btn-success:hover {
-            background: #16a34a;
+        /* Right Section - Status */
+        .status-section {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
 
-        .attendance-section h2 {
-            color: #0F72E8;
+        .status-section h2 {
+            color: #333;
             margin-bottom: 20px;
-            font-size: 1.5em;
+            font-size: 1.2em;
         }
 
         .status-box {
-            text-align: center;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 15px;
-            background: #f0f0f0;
+            background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            border-left: 5px solid #10b981;
+        }
+
+        .status-badge {
+            display: inline-block;
+            background: #10b981;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+            margin-bottom: 10px;
         }
 
         .status-name {
             font-size: 1.3em;
-            font-weight: bold;
+            font-weight: 700;
             color: #333;
-            margin-bottom: 10px;
+            margin-bottom: 12px;
         }
 
-        .status-info {
+        .status-info-row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
             font-size: 0.95em;
+        }
+
+        .info-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .info-label {
             color: #666;
+            font-weight: 600;
         }
 
-        .hadir {
-            background: linear-gradient(135deg, #22C55E 0%, #16a34a 100%);
-            color: white;
+        .info-value {
+            color: #333;
+            font-weight: 700;
         }
 
-        .hadir .status-name,
-        .hadir .status-info {
-            color: white;
+        .confidence-section {
+            background: #f3f4f6;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+
+        .confidence-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+            color: #666;
         }
 
         .confidence-bar {
             width: 100%;
-            height: 8px;
-            background: #ddd;
-            border-radius: 4px;
-            margin-top: 10px;
+            height: 6px;
+            background: #e5e7eb;
+            border-radius: 3px;
             overflow: hidden;
         }
 
         .confidence-fill {
             height: 100%;
-            background: linear-gradient(90deg, #0F72E8, #22C55E);
+            background: linear-gradient(90deg, #2563eb, #10b981);
             width: 0%;
             transition: width 0.3s;
         }
 
-        .predictions {
-            background: #f5f5f5;
-            padding: 15px;
+        /* Predictions */
+        .predictions-section {
+            background: #f3f4f6;
+            padding: 20px;
             border-radius: 8px;
+            margin-top: 15px;
         }
 
-        .predictions h3 {
+        .predictions-title {
+            font-weight: 700;
             color: #333;
-            margin-bottom: 10px;
-            font-size: 1em;
+            margin-bottom: 15px;
+            font-size: 0.95em;
         }
 
         .prediction-item {
             display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #ddd;
-            font-size: 0.9em;
-        }
-
-        .prediction-item:last-child {
-            border-bottom: none;
-        }
-
-        .footer {
+            align-items: center;
+            padding: 12px;
             background: white;
-            border-radius: 15px;
-            padding: 20px;
-            text-align: center;
-            color: #666;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            border-radius: 6px;
+            margin-bottom: 8px;
+            gap: 12px;
         }
 
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 15px;
-            margin-top: 20px;
-        }
-
-        .stat-card {
-            background: linear-gradient(135deg, #0F72E8 0%, #22C55E 100%);
+        .prediction-rank {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: #2563eb;
             color: white;
-            padding: 20px;
-            border-radius: 10px;
-            text-align: center;
+            font-weight: 700;
+            font-size: 0.85em;
         }
 
-        .stat-number {
-            font-size: 2em;
-            font-weight: bold;
-            margin-bottom: 5px;
+        .prediction-rank.rank2 {
+            background: #6366f1;
         }
 
-        .stat-label {
+        .prediction-rank.rank3 {
+            background: #8b5cf6;
+        }
+
+        .prediction-name {
+            flex: 1;
+            font-weight: 600;
+            color: #333;
             font-size: 0.9em;
-            opacity: 0.9;
         }
 
-        .error-message {
-            background: #fee;
-            color: #c00;
-            padding: 15px;
+        .prediction-confidence {
+            font-weight: 700;
+            color: #2563eb;
+            font-size: 0.9em;
+        }
+
+        .mark-button {
+            width: 100%;
+            background: #2563eb;
+            color: white;
+            padding: 14px 20px;
+            border: none;
             border-radius: 8px;
-            margin-bottom: 15px;
-            border-left: 4px solid #c00;
+            font-size: 0.95em;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: all 0.3s;
         }
 
-        @media (max-width: 768px) {
+        .mark-button:hover {
+            background: #1d4ed8;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        }
+
+        .no-detection {
+            text-align: center;
+            color: #999;
+            padding: 40px 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            color: #999;
+            font-size: 0.85em;
+            margin-top: 30px;
+            padding: 20px;
+        }
+
+        /* Message Box */
+        .message-box {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            animation: slideIn 0.3s ease;
+            z-index: 1000;
+        }
+
+        .message-box.success {
+            background: #10b981;
+        }
+
+        .message-box.error {
+            background: #ef4444;
+        }
+
+        .message-box.info {
+            background: #3b82f6;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        @media (max-width: 1024px) {
             .main-content {
                 grid-template-columns: 1fr;
             }
+        }
 
-            .stats-grid {
-                grid-template-columns: 1fr;
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
             }
 
-            h1 {
-                font-size: 1.8em;
+            .button-group {
+                flex-direction: column;
+            }
+
+            button {
+                width: 100%;
             }
         }
     </style>
 </head>
 <body>
     <div class="container">
+        <!-- Header -->
         <header>
-            <h1>🎯 SmartFace</h1>
-            <p class="subtitle">Face Recognition Attendance System</p>
-            <nav>
-                <a href="/">📸 Live Detection</a>
-                <a href="/dashboard">📊 Dashboard</a>
-                <a href="/attendance-list">📋 Attendance Records</a>
-            </nav>
+            <div class="header-left">
+                <div class="logo">👨‍🎓</div>
+                <div class="header-title">
+                    <h1>Deep Learning RA</h1>
+                    <p>Sistem Absensi Face Recognition</p>
+                </div>
+            </div>
+            <div class="header-date" id="currentDate"></div>
         </header>
 
+        <!-- Main Content -->
         <div class="main-content">
-            <!-- Camera Section -->
-            <div class="card camera-section">
-                <h2>📸 Live Camera Feed</h2>
-                <video id="camera" autoplay playsinline></video>
+            <!-- Left: Camera/Upload Section -->
+            <div class="camera-section">
+                <h2>Masukkan Foto Mahasiswa</h2>
+                
                 <div class="button-group">
-                    <button class="btn-primary" onclick="startCamera()">▶ Start</button>
-                    <button class="btn-primary" onclick="stopCamera()">⏹ Stop</button>
-                    <button class="btn-success" onclick="captureAndDetect()">🔍 Detect</button>
-                </div>
-            </div>
-
-            <!-- Attendance Section -->
-            <div class="card attendance-section">
-                <h2>✅ Detection Result</h2>
-                <div id="result" style="display: none;">
-                    <div class="status-box hadir">
-                        <div class="status-name" id="resultName">-</div>
-                        <div class="status-info" id="resultInfo">-</div>
-                        <div class="confidence-bar">
-                            <div class="confidence-fill" id="confidenceBar"></div>
-                        </div>
-                    </div>
-                    <div class="predictions">
-                        <h3>🎯 Top 3 Predictions</h3>
-                        <div id="predictionsList"></div>
-                    </div>
-                    <button class="btn-success" style="width: 100%; margin-top: 15px;" onclick="markAttendance()">
-                        💾 Mark Attendance
+                    <button class="btn-upload" onclick="triggerFileInput()">
+                        📤 Upload Foto
+                    </button>
+                    <button class="btn-camera" onclick="startCamera()">
+                        📷 Gunakan Kamera
                     </button>
                 </div>
-                <div id="noResult" style="display: block;">
-                    <div class="status-box" style="background: #f0f0f0; color: #666;">
-                        <p>No detection yet. Start camera and click "Detect" button.</p>
+
+                <video id="camera" autoplay playsinline></video>
+                <img id="preview" alt="Preview">
+
+                <div id="statusText" class="status-text">
+                    Wajah Terdeteksi
+                </div>
+
+                <button class="detect-button" onclick="captureAndDetect()" disabled id="detectBtn">
+                    🔍 Deteksi Wajah
+                </button>
+
+                <input type="file" id="fileInput" accept="image/*" onchange="handleFileSelect(event)">
+            </div>
+
+            <!-- Right: Status Section -->
+            <div class="status-section">
+                <h2>Status Kehadiran</h2>
+                
+                <div id="resultContainer" style="display: none;">
+                    <div class="status-box">
+                        <div class="status-badge">✓ Hadir</div>
+                        <div class="status-name" id="studentName">-</div>
+                        
+                        <div class="status-info-row">
+                            <div class="info-item">
+                                <span class="info-label">📋 NIM:</span>
+                                <span class="info-value" id="studentNIM">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">👥 Kelas:</span>
+                                <span class="info-value" id="studentKelas">-</span>
+                            </div>
+                        </div>
+
+                        <div class="confidence-section">
+                            <div class="confidence-label">
+                                <span>🎯 Confidence</span>
+                                <span id="confidenceText">0%</span>
+                            </div>
+                            <div class="confidence-bar">
+                                <div class="confidence-fill" id="confidenceBar"></div>
+                            </div>
+                        </div>
+
+                        <div class="predictions-section">
+                            <div class="predictions-title">🎯 Top 3 Prediksi</div>
+                            <div id="predictionsList"></div>
+                        </div>
+
+                        <button class="mark-button" onclick="markAttendance()">
+                            ✓ Catat Kehadiran
+                        </button>
                     </div>
                 </div>
-            </div>
-        </div>
 
-        <!-- Statistics -->
-        <div class="card">
-            <h3 style="color: #0F72E8; margin-bottom: 15px;">📊 Today's Statistics</h3>
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-number" id="todayAttendance">0</div>
-                    <div class="stat-label">Attendance Today</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number" id="uniqueStudents">0</div>
-                    <div class="stat-label">Unique Students</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">98.5%</div>
-                    <div class="stat-label">Model Accuracy</div>
+                <div id="noResultContainer" class="no-detection">
+                    <p>📭 Tidak Ada Deteksi</p>
+                    <p style="font-size: 0.85em; margin-top: 5px;">Upload atau gunakan kamera untuk mendeteksi wajah</p>
                 </div>
             </div>
         </div>
 
-        <footer class="footer">
-            <p>🎓 SmartFace v3.0 | Integrated Face Recognition Attendance System</p>
-            <p style="font-size: 0.9em; margin-top: 10px;">© 2024 - Elsa, Sikah, Machzaul</p>
+        <!-- Footer -->
+        <footer>
+            <p>© 2024 Deep Learning RA - Face Recognition Attendance System | Elsa, Sikah, Machzaul</p>
         </footer>
     </div>
 
@@ -339,13 +537,53 @@
         let currentResult = null;
         const VIDEO_CONSTRAINTS = { video: { facingMode: 'user' }, audio: false };
 
+        // Update current date
+        function updateDate() {
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            const today = new Date().toLocaleDateString('id-ID', options);
+            document.getElementById('currentDate').textContent = today;
+        }
+
+        function triggerFileInput() {
+            document.getElementById('fileInput').click();
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = document.getElementById('preview');
+                img.src = e.target.result;
+                img.style.display = 'block';
+                
+                // Hide camera if it was running
+                const video = document.getElementById('camera');
+                if (video.style.display !== 'none') {
+                    stopCamera();
+                }
+
+                document.getElementById('detectBtn').disabled = false;
+                document.getElementById('statusText').innerHTML = '✓ Foto siap dideteksi';
+            };
+            reader.readAsDataURL(file);
+        }
+
         async function startCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia(VIDEO_CONSTRAINTS);
                 const video = document.getElementById('camera');
                 video.srcObject = stream;
+                video.style.display = 'block';
+                
+                // Hide preview if exists
+                document.getElementById('preview').style.display = 'none';
+                
+                document.getElementById('detectBtn').disabled = false;
+                document.getElementById('statusText').innerHTML = '✓ Kamera aktif - Siap deteksi';
             } catch (error) {
-                alert('Could not access camera: ' + error.message);
+                showMessage('Tidak dapat mengakses kamera: ' + error.message, 'error');
             }
         }
 
@@ -353,17 +591,34 @@
             const video = document.getElementById('camera');
             if (video.srcObject) {
                 video.srcObject.getTracks().forEach(track => track.stop());
+                video.style.display = 'none';
             }
         }
 
         async function captureAndDetect() {
             const video = document.getElementById('camera');
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0);
-            const imageData = canvas.toDataURL('image/jpeg');
+            const preview = document.getElementById('preview');
+            
+            let imageData;
+            
+            if (video.style.display !== 'none' && video.srcObject) {
+                // Capture from camera
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0);
+                imageData = canvas.toDataURL('image/jpeg');
+            } else if (preview.src) {
+                // Use uploaded image
+                imageData = preview.src;
+            } else {
+                showMessage('Silakan upload foto atau gunakan kamera', 'error');
+                return;
+            }
+
+            document.getElementById('detectBtn').disabled = true;
+            showMessage('⏳ Memproses... Sedang deteksi wajah', 'info');
 
             try {
                 const response = await fetch('/recognize', {
@@ -377,12 +632,14 @@
                 if (result.success) {
                     currentResult = result;
                     displayResult(result);
-                    loadStats();
+                    showMessage('✅ Deteksi berhasil!', 'success');
                 } else {
-                    showError(result.error || 'Detection failed');
+                    showMessage('❌ ' + (result.error || 'Deteksi gagal'), 'error');
                 }
             } catch (error) {
-                showError('Error: ' + error.message);
+                showMessage('❌ Error: ' + error.message, 'error');
+            } finally {
+                document.getElementById('detectBtn').disabled = false;
             }
         }
 
@@ -391,30 +648,35 @@
             if (predictions.length === 0) return;
 
             const topPred = predictions[0];
-            document.getElementById('resultName').textContent = topPred.label;
-            document.getElementById('resultInfo').textContent = 
-                `NIM: ${result.student_info?.nim || 'N/A'} | Kelas: ${result.student_info?.kelas || 'N/A'}`;
+            document.getElementById('studentName').textContent = topPred.label;
+            document.getElementById('studentNIM').textContent = result.student_info?.nim || 'N/A';
+            document.getElementById('studentKelas').textContent = result.student_info?.kelas || 'N/A';
+            
+            document.getElementById('confidenceText').textContent = topPred.confidence + '%';
             document.getElementById('confidenceBar').style.width = topPred.confidence + '%';
 
             let predHtml = '';
             predictions.forEach((pred, idx) => {
+                const rankClass = idx === 0 ? '' : (idx === 1 ? 'rank2' : 'rank3');
                 predHtml += `
                     <div class="prediction-item">
-                        <span>#${idx + 1} ${pred.label}</span>
-                        <strong>${pred.confidence}%</strong>
+                        <div class="prediction-rank ${rankClass}">${idx + 1}</div>
+                        <div class="prediction-name">${pred.label}</div>
+                        <div class="prediction-confidence">${pred.confidence}%</div>
                     </div>
                 `;
             });
             document.getElementById('predictionsList').innerHTML = predHtml;
 
-            document.getElementById('result').style.display = 'block';
-            document.getElementById('noResult').style.display = 'none';
+            document.getElementById('resultContainer').style.display = 'block';
+            document.getElementById('noResultContainer').style.display = 'none';
         }
 
         async function markAttendance() {
             if (!currentResult) return;
 
             const pred = currentResult.predictions[0];
+            
             try {
                 const response = await fetch('/mark-attendance', {
                     method: 'POST',
@@ -427,37 +689,28 @@
 
                 const result = await response.json();
                 if (result.success) {
-                    alert('✅ ' + result.message);
-                    loadStats();
+                    showMessage('✅ ' + result.message, 'success');
                 } else {
-                    alert('⚠️ ' + result.message);
+                    showMessage('⚠️ ' + result.message, 'error');
                 }
             } catch (error) {
-                alert('Error: ' + error.message);
+                showMessage('❌ Error: ' + error.message, 'error');
             }
         }
 
-        async function loadStats() {
-            try {
-                const response = await fetch('/api/stats');
-                const data = await response.json();
-                if (data.success) {
-                    document.getElementById('todayAttendance').textContent = data.today_attendance;
-                    document.getElementById('uniqueStudents').textContent = data.unique_students_today;
-                }
-            } catch (error) {
-                console.error('Stats loading error:', error);
-            }
+        function showMessage(text, type = 'info') {
+            const msg = document.createElement('div');
+            msg.className = 'message-box ' + type;
+            msg.textContent = text;
+            document.body.appendChild(msg);
+
+            setTimeout(() => {
+                msg.style.animation = 'slideOut 0.3s ease forwards';
+                setTimeout(() => msg.remove(), 300);
+            }, 3000);
         }
 
-        function showError(message) {
-            alert('❌ ' + message);
-        }
-
-        // Load stats on page load
-        window.addEventListener('load', () => {
-            loadStats();
-        });
+        window.addEventListener('load', updateDate);
     </script>
 </body>
 </html>
