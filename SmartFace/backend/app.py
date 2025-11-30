@@ -12,6 +12,7 @@ import pickle
 import os
 from datetime import datetime
 import json
+import torch.nn.functional as F
 
 app = Flask(__name__)
 CORS(app)
@@ -31,62 +32,92 @@ except Exception as e:
 device = torch.device('cpu')
 
 # Model Definition (sama dengan training)
-class FineTunedResNet50(nn.Module):
-    def __init__(self, num_classes=70):
-        super(FineTunedResNet50, self).__init__()
-        resnet = models.resnet50(pretrained=False)
-        
-        for param in resnet.parameters():
-            param.requires_grad = False
-        
-        for param in resnet.layer4.parameters():
-            param.requires_grad = True
-        
-        for param in resnet.layer3.parameters():
-            param.requires_grad = True
-        
-        num_features = resnet.fc.in_features
-        resnet.fc = nn.Sequential(
-            nn.Dropout(0.5),
-            nn.Linear(num_features, 512),
-            nn.ReLU(),
-            nn.BatchNorm1d(512),
-            nn.Dropout(0.3),
-            nn.Linear(512, num_classes)
-        )
-        
-        self.model = resnet
-        
-    def forward(self, x):
-        return self.model(x)
+class ResNet50Embedding(nn.Module):
+    def __init__(self, embed_dim=512, p_drop=0.5):
+        super(ResNet50Embedding, self).__init__()
+        resnet = models.resnet50(weights=None)  # atau pretrained=False
 
-# Load Model
-MODEL_PATH = 'best_finetuned_resnet50.pth'  # Model sekarang di folder backend
+        # Ambil fitur sebelum FC
+        in_features = resnet.fc.in_features
+        resnet.fc = nn.Identity()
+
+        self.backbone = resnet
+        self.dropout = nn.Dropout(p_drop)
+        self.fc = nn.Linear(in_features, embed_dim)
+        self.bn = nn.BatchNorm1d(embed_dim) 
+
+    def forward(self, x):
+        x = self.backbone(x)
+        x = self.dropout(x)
+        x = self.fc(x)
+        x = self.bn(x) 
+        return x
+
+# Load ArcFace checkpoint
+MODEL_PATH = 'resnet50_arcface_best2.pt'
 model = None
-label_encoder = None
-num_classes = 70
+arc_weight = None
+idx_to_class_map = {}
+num_classes = 0
+IMG_SIZE = 224
 
 try:
-    checkpoint = torch.load(MODEL_PATH, map_location=device, weights_only=False)
-    label_encoder = checkpoint['label_encoder']
-    num_classes = len(label_encoder.classes_)
-    
-    model = FineTunedResNet50(num_classes=num_classes)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.to(device)
-    model.eval()
-    
-    print(f"✓ Model loaded successfully!")
+    ckpt = torch.load(MODEL_PATH, map_location=device)
+
+    # --- Ambil info kelas ---
+    class_to_idx = ckpt.get("class_to_idx", {})
+    idx_to_class = ckpt.get("idx_to_class", {})
+    num_classes = len(class_to_idx) if class_to_idx else 70
+
+    # Normalisasi idx_to_class → dict idx:int -> label:str
+    if isinstance(idx_to_class, list):
+        idx_to_class_map = {i: lbl for i, lbl in enumerate(idx_to_class)}
+    elif isinstance(idx_to_class, dict) and all(isinstance(k, int) for k in idx_to_class.keys()):
+        idx_to_class_map = idx_to_class
+    elif isinstance(idx_to_class, dict) and all(isinstance(v, int) for v in idx_to_class.values()):
+        idx_to_class_map = {v: k for k, v in idx_to_class.items()}
+    else:
+        # fallback kalau gagal, bikin label generik
+        idx_to_class_map = {i: f"class_{i}" for i in range(num_classes)}
+
+    # --- ukuran gambar dari ckpt (kalau ada) ---
+    IMG_SIZE = ckpt.get("img_size", 224)
+
+    # --- Bangun model embedding dan load state_dict ---
+    model = ResNet50Embedding(embed_dim=512, p_drop=0.5)
+    load_result = model.load_state_dict(ckpt["model"], strict=False)
+    # Optional: print info kalau mau lihat apa yang di-skip
+    missing_keys, unexpected_keys = load_result
+    if unexpected_keys:
+        print("  [WARN] Unexpected keys ignored in model state_dict:", unexpected_keys)
+    if missing_keys:
+        print("  [WARN] Missing keys in model state_dict:", missing_keys)
+
+    model.to(device).eval()
+
+    # --- Ambil weight ArcFace ---
+    arc_state = ckpt["arc"]
+    # kalau yg disimpan adalah state_dict:
+    if isinstance(arc_state, dict) and "weight" in arc_state:
+        arc_weight = arc_state["weight"]
+    else:
+        # kalau yg disimpan module, ambil atribut weight
+        arc_weight = arc_state.weight
+    arc_weight = arc_weight.to(device)
+
+    print("✓ ArcFace checkpoint loaded successfully!")
     print(f"  Classes: {num_classes}")
-    print(f"  Labels: {label_encoder.classes_[:5]}... (showing first 5)")
+    print(f"  Sample labels: {[idx_to_class_map[i] for i in list(idx_to_class_map.keys())[:5]]} ...")
+
 except Exception as e:
     print(f"✗ Error loading model: {e}")
+    print(f"  Make sure {MODEL_PATH} exists in the backend folder")
 
 # Transform
 test_transform = transforms.Compose([
-    transforms.Resize((224, 224)),
+    transforms.Resize((IMG_SIZE, IMG_SIZE)),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
 ])
 
 # Attendance storage
@@ -142,35 +173,39 @@ def detect_and_crop_face(image_array):
     return face_crop, bbox
 
 def predict_identity(face_image):
-    """Predict identity from face image"""
-    if model is None or label_encoder is None:
+    """Predict identity from face image (ArcFace ResNet50)"""
+    if model is None or arc_weight is None or not idx_to_class_map:
         return []
-    
+
     # Convert to PIL
     if isinstance(face_image, np.ndarray):
         face_image = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
         face_image = Image.fromarray(face_image)
-    
+
     # Transform
     img_tensor = test_transform(face_image).unsqueeze(0).to(device)
-    
-    # Predict
+
+    # Predict: embedding -> cosine similarity with arc_weight
     with torch.no_grad():
-        outputs = model(img_tensor)
-        probabilities = torch.softmax(outputs, dim=1)[0]
-    
+        emb = model(img_tensor)                           # [1, 512]
+        emb_norm = F.normalize(emb, dim=1)                # [1, 512]
+        w_norm = F.normalize(arc_weight, dim=1)           # [C, 512]
+        logits = torch.matmul(emb_norm, w_norm.t())       # [1, C]
+        probabilities = torch.softmax(logits, dim=1)[0]   # [C]
+
     # Get top 3 predictions
     top3_prob, top3_idx = torch.topk(probabilities, 3)
-    
+
     predictions = []
     for prob, idx in zip(top3_prob, top3_idx):
-        label = label_encoder.inverse_transform([idx.item()])[0]
+        idx_int = idx.item()
+        label = idx_to_class_map.get(idx_int, f"class_{idx_int}")
         confidence = prob.item() * 100
         predictions.append({
             'label': label,
             'confidence': round(confidence, 2)
         })
-    
+
     return predictions
 
 @app.route('/health', methods=['GET'])
