@@ -103,7 +103,7 @@ const CameraView = ({ onDetection }: CameraViewProps) => {
       if (error instanceof Error) {
         if (error.message.includes("fetch")) {
           errorMessage =
-            "Tidak dapat terhubung ke server. Pastikan backend sudah berjalan di http://localhost:5000";
+            `Tidak dapat terhubung ke server di ${apiUrl}. Pastikan backend berjalan.`;
         } else {
           errorMessage = error.message;
         }
