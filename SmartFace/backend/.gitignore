@@ -12,7 +12,7 @@ venv/
 ENV/
 
 # Model files (downloaded from Hugging Face)
-*.pth
+best_finetuned_resnet50.pth
 *.pt
 model_cache/
 
