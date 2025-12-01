@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import torch
 import torch.nn as nn
@@ -391,31 +391,20 @@ def delete_attendance(id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# Serve static files from frontend build
-frontend_dist = os.path.join(os.path.dirname(__file__), '..', 'dist')
-if not os.path.exists(frontend_dist):
-    print("Mencoba membangun frontend...")
-    frontend_dir = os.path.join(os.path.dirname(__file__), '..')
-    try:
-        # Coba dengan bun dulu, kalau gagal pakai npm
-        subprocess.run(['bun', 'run', 'build'], cwd=frontend_dir, check=True)
-        print("Frontend berhasil dibangun dengan bun.")
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        try:
-            subprocess.run(['npm', 'run', 'build'], cwd=frontend_dir, check=True)
-            print("Frontend berhasil dibangun dengan npm.")
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            print(f"Build frontend gagal: {e}. Menggunakan folder root sebagai fallback.")
-            frontend_dist = os.path.join(os.path.dirname(__file__), '..')
-
-app.static_folder = frontend_dist
-
-@app.route('/', defaults={'path': ''})
-@app.route('/<path:path>')
-def serve_frontend(path):
-    if path and os.path.exists(os.path.join(app.static_folder, path)):
-        return send_from_directory(app.static_folder, path)
-    return send_from_directory(app.static_folder, 'index.html')
+# Root endpoint for health check
+@app.route('/', methods=['GET'])
+def root():
+    return jsonify({
+        'message': 'SmartFace Attendance API',
+        'status': 'running',
+        'endpoints': {
+            'health': '/health',
+            'recognize': '/recognize [POST]',
+            'mark_attendance': '/mark-attendance [POST]',
+            'get_attendance': '/attendance [GET]',
+            'delete_attendance': '/attendance/<id> [DELETE]'
+        }
+    })
 
 if __name__ == '__main__':
     print("="*80)
