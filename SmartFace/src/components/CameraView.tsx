@@ -48,8 +48,8 @@ const CameraView = ({ onDetection }: CameraViewProps) => {
     // Show loading toast
     const loadingToast = toast({
       title: "Memproses...",
-      description: "Mengirim foto ke server untuk dianalisis. Mohon tunggu...",
-      duration: 120000, // 2 minutes
+      description: "Mengirim foto ke server untuk dianalisis. Loading pertama kali butuh waktu 3-5 menit. Mohon tunggu...",
+      duration: 300000, // 5 minutes
     });
 
     try {
@@ -70,7 +70,7 @@ const CameraView = ({ onDetection }: CameraViewProps) => {
       const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
       
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 300 second (5 min) timeout for first model load
 
       const response = await fetch(`${apiUrl}/recognize`, {
         method: "POST",
