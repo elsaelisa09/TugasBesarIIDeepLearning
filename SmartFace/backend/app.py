@@ -4,12 +4,6 @@ import torch
 import torch.nn as nn
 from torchvision import transforms, models
 from PIL import Image
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import torch
-import torch.nn as nn
-from torchvision import transforms, models
-from PIL import Image
 import numpy as np
 import cv2
 import base64
@@ -22,9 +16,22 @@ import torch.nn.functional as F
 import subprocess
 import sys
 import time
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+
+# Configure CORS for production
+frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:5173')
+CORS(app, resources={
+    r"/*": {
+        "origins": [frontend_url, "http://localhost:5173", "http://127.0.0.1:5173"],
+        "methods": ["GET", "POST", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type"]
+    }
+})
 
 # 1. Load Face Detector
 
@@ -66,13 +73,30 @@ class ResNet50Embedding(nn.Module):
         return x
 
 # 4. Load ArcFace checkpoint
-MODEL_PATH = 'best_gacor.pth'   # <--- pakai .pth
+MODEL_PATH = os.getenv('MODEL_PATH', 'best_gacor.pth')
+HF_MODEL_REPO = os.getenv('HF_MODEL_REPO', 'elsaelisa09/smartface-attendance-model')
+USE_HUGGINGFACE = os.getenv('USE_HUGGINGFACE', 'true').lower() == 'true'
 
 model = None
 arc_weight = None
 idx_to_class_map = {}
 num_classes = 0
 IMG_SIZE = 224
+
+# Download model from Hugging Face if enabled and not exists locally
+if USE_HUGGINGFACE and not os.path.exists(MODEL_PATH):
+    try:
+        from huggingface_hub import hf_hub_download
+        print(f"📥 Downloading model from Hugging Face: {HF_MODEL_REPO}")
+        MODEL_PATH = hf_hub_download(
+            repo_id=HF_MODEL_REPO,
+            filename="best_gacor.pth",
+            cache_dir="./model_cache"
+        )
+        print(f"✓ Model downloaded to: {MODEL_PATH}")
+    except Exception as e:
+        print(f"⚠ Failed to download from Hugging Face: {e}")
+        print(f"  Falling back to local model: {MODEL_PATH}")
 
 try:
     ckpt = torch.load(MODEL_PATH, map_location=device)
@@ -400,6 +424,12 @@ if __name__ == '__main__':
     print(f"Model: {'✓ Loaded' if model else '✗ Not loaded'}")
     print(f"Face Detector: {'✓ MTCNN' if mtcnn else '✗ Not loaded'}")
     print(f"Classes: {num_classes}")
+    print(f"Frontend URL: {frontend_url}")
     print("="*80)
     
-    app.run(debug=False, host='127.0.0.1', port=5000)
+    # Get port from environment variable (for production deployment)
+    port = int(os.getenv('PORT', 5000))
+    host = os.getenv('HOST', '0.0.0.0')
+    debug = os.getenv('FLASK_ENV', 'development') == 'development'
+    
+    app.run(debug=debug, host=host, port=port)

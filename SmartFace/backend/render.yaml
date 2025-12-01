@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: smartface-backend
+    env: python
+    region: singapore
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: FRONTEND_URL
+        sync: false
+      - key: MODEL_PATH
+        value: best_gacor.pth
+      - key: IMG_SIZE
+        value: 224

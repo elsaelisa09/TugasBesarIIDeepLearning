@@ -68,7 +68,8 @@ const Index = () => {
     if (!studentName || !confidence) return;
 
     try {
-      const response = await fetch("http://localhost:5000/mark-attendance", {
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
+      const response = await fetch(`${apiUrl}/mark-attendance`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -125,8 +126,9 @@ const Index = () => {
 
   const fetchAttendanceForToday = async () => {
     try {
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
       const today = new Date().toISOString().slice(0, 10);
-      const res = await fetch(`http://localhost:5000/attendance?date=${today}`);
+      const res = await fetch(`${apiUrl}/attendance?date=${today}`);
       if (!res.ok) return;
       const data = await res.json();
       if (data && data.success && Array.isArray(data.data)) {
