@@ -48,7 +48,8 @@ const CameraView = ({ onDetection }: CameraViewProps) => {
     // Show loading toast
     const loadingToast = toast({
       title: "Memproses...",
-      description: "Mengirim foto ke server untuk dianalisis. Loading pertama kali butuh waktu 3-5 menit. Mohon tunggu...",
+      description:
+        "Mengirim foto ke server untuk dianalisis. Loading pertama kali butuh waktu 3-5 menit. Mohon tunggu...",
       duration: 300000, // 5 minutes
     });
 
@@ -68,7 +69,7 @@ const CameraView = ({ onDetection }: CameraViewProps) => {
 
       // Call backend API with timeout
       const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
-      
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000); // 300 second (5 min) timeout for first model load
 
@@ -117,9 +118,13 @@ const CameraView = ({ onDetection }: CameraViewProps) => {
       const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
       let errorMessage = "Terjadi kesalahan";
       if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          errorMessage = "Request timeout. Server membutuhkan waktu terlalu lama. Coba lagi dalam beberapa menit (server mungkin sedang loading model).";
-        } else if (error.message.includes("fetch") || error.message.includes("Failed to fetch")) {
+        if (error.name === "AbortError") {
+          errorMessage =
+            "Request timeout. Server membutuhkan waktu terlalu lama. Coba lagi dalam beberapa menit (server mungkin sedang loading model).";
+        } else if (
+          error.message.includes("fetch") ||
+          error.message.includes("Failed to fetch")
+        ) {
           errorMessage = `Tidak dapat terhubung ke server di ${apiUrl}. Pastikan backend berjalan dan CORS sudah dikonfigurasi.`;
         } else {
           errorMessage = error.message;

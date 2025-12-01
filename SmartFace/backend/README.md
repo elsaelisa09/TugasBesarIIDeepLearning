@@ -12,12 +12,14 @@ pinned: false
 Face recognition backend for SmartFace attendance system using ResNet50 with ArcFace.
 
 ## Features
+
 - Face detection using MTCNN
 - Face recognition using ResNet50 + ArcFace
 - Attendance tracking
 - CORS enabled for frontend integration
 
 ## API Endpoints
+
 - `GET /` - API info
 - `GET /health` - Health check
 - `POST /recognize` - Face recognition

@@ -77,7 +77,7 @@ MODEL_PATH = os.getenv('MODEL_PATH', 'best_gacor.pth')
 HF_MODEL_REPO = os.getenv('HF_MODEL_REPO', 'elsaelisa09/smartface-attendance-model')
 USE_HUGGINGFACE = os.getenv('USE_HUGGINGFACE', 'true').lower() == 'true'
 
-# Global variables for lazy loading
+{"endpoints":{"delete_attendance":"/attendance/<id> [DELETE]","get_attendance":"/attendance [GET]","health":"/health","mark_attendance":"/mark-attendance [POST]","recognize":"/recognize [POST]"},"message":"SmartFace Attendance API","model_status":"not_loaded","status":"running"}# Global variables for lazy loading
 model = None
 arc_weight = None
 idx_to_class_map = {}
