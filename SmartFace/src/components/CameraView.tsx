@@ -45,6 +45,13 @@ const CameraView = ({ onDetection }: CameraViewProps) => {
     setIsScanning(true);
     setFaceDetected(false);
 
+    // Show loading toast
+    const loadingToast = toast({
+      title: "Memproses...",
+      description: "Mengirim foto ke server untuk dianalisis. Mohon tunggu...",
+      duration: 120000, // 2 minutes
+    });
+
     try {
       // Get image data
       let imageData = "";
@@ -59,18 +66,26 @@ const CameraView = ({ onDetection }: CameraViewProps) => {
         throw new Error("Tidak bisa mengambil gambar");
       }
 
-      // Call backend API
+      // Call backend API with timeout
       const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout
+
       const response = await fetch(`${apiUrl}/recognize`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ image: imageData }),
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
-        throw new Error("Gagal mengenali wajah");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Gagal mengenali wajah");
       }
 
       const data = await response.json();
@@ -99,11 +114,13 @@ const CameraView = ({ onDetection }: CameraViewProps) => {
       setFaceDetected(false);
       setDetectedName(null);
 
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
       let errorMessage = "Terjadi kesalahan";
       if (error instanceof Error) {
-        if (error.message.includes("fetch")) {
-          errorMessage =
-            `Tidak dapat terhubung ke server di ${apiUrl}. Pastikan backend berjalan.`;
+        if (error.name === 'AbortError') {
+          errorMessage = "Request timeout. Server membutuhkan waktu terlalu lama. Coba lagi dalam beberapa menit (server mungkin sedang loading model).";
+        } else if (error.message.includes("fetch") || error.message.includes("Failed to fetch")) {
+          errorMessage = `Tidak dapat terhubung ke server di ${apiUrl}. Pastikan backend berjalan dan CORS sudah dikonfigurasi.`;
         } else {
           errorMessage = error.message;
         }
