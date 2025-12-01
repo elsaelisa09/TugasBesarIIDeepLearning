@@ -77,69 +77,90 @@ MODEL_PATH = os.getenv('MODEL_PATH', 'best_gacor.pth')
 HF_MODEL_REPO = os.getenv('HF_MODEL_REPO', 'elsaelisa09/smartface-attendance-model')
 USE_HUGGINGFACE = os.getenv('USE_HUGGINGFACE', 'true').lower() == 'true'
 
+# Global variables for lazy loading
 model = None
 arc_weight = None
 idx_to_class_map = {}
 num_classes = 0
 IMG_SIZE = 224
+model_loading = False
+model_loaded = False
 
-# Download model from Hugging Face if enabled and not exists locally
-if USE_HUGGINGFACE and not os.path.exists(MODEL_PATH):
+def load_model():
+    """Lazy load model to avoid timeout on startup"""
+    global model, arc_weight, idx_to_class_map, num_classes, IMG_SIZE, MODEL_PATH, model_loading, model_loaded
+    
+    if model_loaded:
+        return True
+    
+    if model_loading:
+        return False
+    
+    model_loading = True
+    
     try:
-        from huggingface_hub import hf_hub_download
-        print(f"📥 Downloading model from Hugging Face: {HF_MODEL_REPO}")
-        MODEL_PATH = hf_hub_download(
-            repo_id=HF_MODEL_REPO,
-            filename="best_gacor.pth",
-            cache_dir="./model_cache"
-        )
-        print(f"✓ Model downloaded to: {MODEL_PATH}")
+        # Download model from Hugging Face if enabled and not exists locally
+        if USE_HUGGINGFACE and not os.path.exists(MODEL_PATH):
+            try:
+                from huggingface_hub import hf_hub_download
+                print(f"📥 Downloading model from Hugging Face: {HF_MODEL_REPO}")
+                MODEL_PATH = hf_hub_download(
+                    repo_id=HF_MODEL_REPO,
+                    filename="best_gacor.pth",
+                    cache_dir="./model_cache"
+                )
+                print(f"✓ Model downloaded to: {MODEL_PATH}")
+            except Exception as e:
+                print(f"⚠ Failed to download from Hugging Face: {e}")
+                print(f"  Falling back to local model: {MODEL_PATH}")
+
+        ckpt = torch.load(MODEL_PATH, map_location=device)
+
+        # --- Ambil info kelas ---
+        class_to_idx = ckpt.get("class_to_idx", {})
+        idx_to_class = ckpt.get("idx_to_class", {})
+        num_classes = len(class_to_idx) if class_to_idx else 70
+
+        # Normalisasi idx_to_class → dict idx:int -> label:str
+        if isinstance(idx_to_class, list):
+            idx_to_class_map = {i: lbl for i, lbl in enumerate(idx_to_class)}
+        elif isinstance(idx_to_class, dict) and all(isinstance(k, int) for k in idx_to_class.keys()):
+            idx_to_class_map = idx_to_class
+        elif isinstance(idx_to_class, dict) and all(isinstance(v, int) for v in idx_to_class.values()):
+            # kasus LABEL→INT
+            idx_to_class_map = {v: k for k, v in idx_to_class.items()}
+        else:
+            idx_to_class_map = {i: f"class_{i}" for i in range(num_classes)}
+
+        # --- ukuran gambar dari ckpt (kalau ada) ---
+        IMG_SIZE = ckpt.get("img_size", 224)
+
+        # --- Bangun model embedding dan load state_dict ---
+        model = ResNet50Embedding(embed_dim=512, p_drop=0.5)
+        model.load_state_dict(ckpt["model"])
+        model.to(device).eval()
+
+        # --- Ambil weight ArcFace ---
+        arc_state = ckpt["arc"]
+        if isinstance(arc_state, dict) and "weight" in arc_state:
+            arc_weight = arc_state["weight"]
+        else:
+            arc_weight = arc_state.weight
+        arc_weight = arc_weight.to(device)
+
+        print("✓ ArcFace checkpoint loaded successfully!")
+        print(f"  Classes: {num_classes}")
+        print(f"  Sample labels: {[idx_to_class_map[i] for i in list(idx_to_class_map.keys())[:5]]} ...")
+        
+        model_loaded = True
+        model_loading = False
+        return True
+
     except Exception as e:
-        print(f"⚠ Failed to download from Hugging Face: {e}")
-        print(f"  Falling back to local model: {MODEL_PATH}")
-
-try:
-    ckpt = torch.load(MODEL_PATH, map_location=device)
-
-    # --- Ambil info kelas ---
-    class_to_idx = ckpt.get("class_to_idx", {})
-    idx_to_class = ckpt.get("idx_to_class", {})
-    num_classes = len(class_to_idx) if class_to_idx else 70
-
-    # Normalisasi idx_to_class → dict idx:int -> label:str
-    if isinstance(idx_to_class, list):
-        idx_to_class_map = {i: lbl for i, lbl in enumerate(idx_to_class)}
-    elif isinstance(idx_to_class, dict) and all(isinstance(k, int) for k in idx_to_class.keys()):
-        idx_to_class_map = idx_to_class
-    elif isinstance(idx_to_class, dict) and all(isinstance(v, int) for v in idx_to_class.values()):
-        # kasus LABEL→INT
-        idx_to_class_map = {v: k for k, v in idx_to_class.items()}
-    else:
-        idx_to_class_map = {i: f"class_{i}" for i in range(num_classes)}
-
-    # --- ukuran gambar dari ckpt (kalau ada) ---
-    IMG_SIZE = ckpt.get("img_size", 224)
-
-    # --- Bangun model embedding dan load state_dict ---
-    model = ResNet50Embedding(embed_dim=512, p_drop=0.5)
-    model.load_state_dict(ckpt["model"])
-    model.to(device).eval()
-
-    # --- Ambil weight ArcFace ---
-    arc_state = ckpt["arc"]
-    if isinstance(arc_state, dict) and "weight" in arc_state:
-        arc_weight = arc_state["weight"]
-    else:
-        arc_weight = arc_state.weight
-    arc_weight = arc_weight.to(device)
-
-    print("✓ ArcFace checkpoint loaded successfully!")
-    print(f"  Classes: {num_classes}")
-    print(f"  Sample labels: {[idx_to_class_map[i] for i in list(idx_to_class_map.keys())[:5]]} ...")
-
-except Exception as e:
-    print(f"✗ Error loading model: {e}")
-    print(f"  Make sure {MODEL_PATH} exists in the backend folder")
+        print(f"✗ Error loading model: {e}")
+        print(f"  Make sure {MODEL_PATH} exists in the backend folder")
+        model_loading = False
+        return False
 
 
 # Transform (HARUS sama dgn val_tfms)
@@ -250,16 +271,21 @@ def predict_identity(face_image):
 
 @app.route('/health', methods=['GET'])
 def health():
+    # Quick response for health check - don't wait for model
     return jsonify({
         'status': 'ok',
-        'model_loaded': model is not None,
+        'model_loaded': model_loaded,
+        'model_loading': model_loading,
         'face_detector': face_detector,
-        'mtcnn_loaded': mtcnn is not None,
-        'num_classes': num_classes
+        'mtcnn_loaded': mtcnn is not None
     })
 
 @app.route('/recognize', methods=['POST'])
 def recognize():
+    # Lazy load model on first request
+    if not model_loaded:
+        load_model()
+    
     try:
         data = request.get_json()
         
@@ -394,9 +420,11 @@ def delete_attendance(id):
 # Root endpoint for health check
 @app.route('/', methods=['GET'])
 def root():
+    # Quick response for render health check
     return jsonify({
         'message': 'SmartFace Attendance API',
         'status': 'running',
+        'model_status': 'loaded' if model_loaded else ('loading' if model_loading else 'not_loaded'),
         'endpoints': {
             'health': '/health',
             'recognize': '/recognize [POST]',
