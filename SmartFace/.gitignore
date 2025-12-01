@@ -60,6 +60,7 @@ pip-delete-this-directory.txt
 
 # Data files
 *.csv
+!src/labels-nim.csv
 *.json
 !package.json
 !package-lock.json
